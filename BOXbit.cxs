@@ -1,0 +1,381 @@
+'*********************************************************************
+'
+' Copyright (c) 2019-2022 TheMrCerebro
+'
+' BOXbit - Zlib license.
+'
+' This software is provided 'as-is', without any express or
+' implied warranty. In no event will the authors be held
+' liable for any damages arising from the use of this software.
+'
+' Permission is granted to anyone to use this software for any purpose,
+' including commercial applications, and to alter it and redistribute
+' it freely, subject to the following restrictions:
+'
+' 1. The origin of this software must not be misrepresented;
+' you must not claim that you wrote the original software.
+' If you use this software in a product, an acknowledgment
+' in the product documentation would be appreciated but
+' is not required.
+'
+' 2. Altered source versions must be plainly marked as such,
+' and must not be misrepresented as being the original software.
+'
+' 3. This notice may not be removed or altered from any
+' source distribution.
+'
+'*********************************************************************
+
+#GLFW_WINDOW_TITLE="BOXbit - by TheMrCerebro"
+#GLFW_WINDOW_WIDTH=512
+#GLFW_WINDOW_HEIGHT=512
+#MOJO_IMAGE_FILTERING_ENABLED=False
+
+Import mojo
+
+Import inc.particles
+Import inc.autofit
+Import inc.hscore
+Import inc.coldet
+Import inc.animated
+Import inc.fonts
+Import inc.shapes
+
+Function Main()
+	New Game()
+End
+
+Class BULLET
+	Field x#,y#,dx#,dy#,c%,r%,g%,b%
+End
+
+Class Game Extends App
+	
+	'constructor
+	Method OnCreate()
+
+		'Configuracion
+		SetVirtualDisplay(64,64)
+		SetUpdateRate(30)
+		Seed = Millisecs()
+
+		'Carga la fuente de letras
+		LoadFont("terminal.fnt")
+		
+		'Carga las imagenes
+		imgPlayer   = LoadImage("player.png",4,Image.MidHandle)
+		imgLauncher = LoadImage("launcher.png",1,Image.MidHandle)
+		imgTitle    = LoadImage("title.png",1,Image.MidHandle)
+		imgELight   = LoadImage("elight.png",4,Image.MidHandle)
+		imgEPlasma  = LoadImage("eplasma.png",4,Image.MidHandle)
+		imgSensor	= LoadImage("sensor.png",4)
+		
+		'Carga los sonidos
+		sndSelect = LoadSound("select.wav")
+		sndGood   = LoadSound("good.wav")
+		sndBad    = LoadSound("bad.wav")
+		sndRotate = LoadSound("rotate.wav")
+		sndOver   = LoadSound("over.wav")
+
+		'Crea una lista de puntuaciones ficticia
+		AddScore(64,"TMC")
+		AddScore(48,"JDP")
+		AddScore(32,"MGS")
+		AddScore(24,"HDF")
+		AddScore(16,"SMB")
+		
+		PlayMusic("theme.ogg")
+
+	End
+	
+	Method OnUpdate()
+
+		#If TARGET="glfw"
+		If KeyHit(KEY_ESCAPE) Then EndApp()
+		If KeyHit(KEY_F4)
+			fullscreen=Not fullscreen
+			If fullscreen
+				SetDeviceWindow(DesktopMode.Width,DesktopMode.Height,1)
+				HideMouse()
+			Else
+				SetDeviceWindow(512,512,4)
+				ShowMouse()
+			Endif
+		Endif
+		#Endif
+		
+		If fader=0
+		
+			Select state
+		
+			Case STATE_MENU
+	
+				If KeyHit(KEY_X)
+					fader=1
+					score=0
+					Move=0
+					lifes=3
+					rotation=0
+					Increment=0
+					level=0
+					CR=255
+					CG=255
+					CB=255
+					PlaySound(sndSelect)
+					state=STATE_INGAME
+				endif
+	
+			Case STATE_INGAME
+				
+				level=0.5+(score*0.01)
+	
+				If circle<64 Then circle+=2
+	
+				If Move<2
+					Move += 0.1
+				Else
+						
+					If KeyHit(KEY_LEFT)
+						Increment += 90
+						PlaySound(sndRotate,1)
+					Elseif KeyHit(KEY_RIGHT)
+						Increment -= 90
+						PlaySound(sndRotate,1)
+					Endif
+							
+					If rotation>Increment Then rotation -= 30
+					If rotation<Increment Then rotation += 30
+								
+					If shot<0
+						Local bll:=New BULLET()
+						Local c%=after
+						Select c
+							Case 0; bll.r=255;bll.g=0;  bll.b=0
+							Case 1; bll.r=0;  bll.g=255;bll.b=0
+							Case 2; bll.r=0;  bll.g=0;  bll.b=255
+							Case 3; bll.r=255;bll.g=255;bll.b=0
+						End
+						bll.c=c
+						Local rot%=Rnd(0,4)
+						bll.dx=Sin(rot*90)
+						bll.dy=Cos(rot*90)
+						bll.x=32-(32*bll.dx)
+						bll.y=32-(32*bll.dy)
+						AddAnimation(imgEPlasma,Int(bll.x),Int(bll.y))
+						bllA.AddLast(bll)
+						after=Rnd(0,4)
+						shot=60
+					Else
+						shot -= 1
+					Endif
+							
+				endif
+				
+			'Actualiza las balas
+			'############################################################
+	
+				For Local bll:=Eachin bllA
+						
+					bll.x += bll.dx*level
+					bll.y += bll.dy*level
+							
+					AddEmitter(bll.x,bll.y,0.0,0.0,bll.r,bll.g,bll.b,1,0.025)
+					
+					Local Accept?
+							
+					If pointRect(32-Sin(rotation)*5,32-Cos(rotation)*5, bll.x-2, bll.y-2,4,4) And bll.c=0 Then Accept=True'Rojo
+					If pointRect(32-Cos(rotation)*5,32+Sin(rotation)*5, bll.x-2, bll.y-2,4,4) And bll.c=1 Then Accept=True'Amarillo
+					If pointRect(32+Cos(rotation)*5,32-Sin(rotation)*5, bll.x-2, bll.y-2,4,4) And bll.c=2 Then Accept=True'Verde
+					If pointRect(32+Sin(rotation)*5,32+Cos(rotation)*5, bll.x-2, bll.y-2,4,4) And bll.c=3 Then Accept=True'Azul
+	
+					If Accept
+							
+						AddAnimation(imgELight,32,32)
+						score +=1
+						circle=0;CR=bll.r;CG=bll.g;CB=bll.b
+						PlaySound(sndGood,2)
+						bllA.RemoveEach(bll)
+								
+					Elseif pointRect(bll.x,bll.y,26,26,12,12)'bll.x>=32-6 And bll.x<=32+6 And bll.y>=32-6 And bll.y<=32+6
+							
+						PlaySound(sndBad,3)
+						bllA.RemoveEach(bll)
+								
+						If lifes>0
+							
+							shake=10
+							lifes -=1
+							AddEmitter(32,32,0.0,0.0,bll.r,bll.g,bll.b,32,0.025)
+								
+						Else
+							PlaySound(sndOver,4)
+							bllA.Clear()
+							anmA.Clear()
+							CheckScore()
+							fader=1
+							state=STATE_OVER
+						Endif
+						
+					Endif
+				
+				next
+	
+			Case STATE_OVER
+					
+				If ranking
+					EnterPlayer(sndSelect)
+				else
+					If KeyHit(KEY_X)
+						txt=""
+						score=0
+						parA.Clear()
+						PlaySound(sndSelect,1)
+						fader=1
+						state=STATE_MENU
+					Endif
+				endif
+					
+			End
+		Endif
+		
+	'Actualiza las animaciones
+			
+		UpdateAnimations()
+
+	'Actualiza las particulas
+	
+		UpdateParticles()
+		
+	'Actualiza el oscurecimiento d epantalla
+	
+		If fader>0.05 Then fader -= 0.05 Else fader=0
+
+	End
+	
+    Method OnRender()
+
+	    UpdateVirtualDisplay()
+			
+		Local rot#=0.01*Millisecs() Mod 360
+		For Local i%=0 Until 8
+		    Local x#,y#
+		    SetAlpha(0.3)
+			x = Sin(i*45+rot)*16
+		 	y = Cos(i*45+rot)*16
+		 	Rect((32+x)-1.5,(32+y)-1.5, 3, 3)
+		 	SetAlpha(0.2)
+			x = Sin(i*45-rot)*24
+			y = Cos(i*45-rot)*24
+			Rect((32+x)-1,(32+y)-1, 2, 2)
+			SetAlpha(0.1)
+		 	x = Sin(i*45+rot)*32
+		 	y = Cos(i*45+rot)*32
+		 	Rect((32+x)-0.5,(32+y)-0.5, 1, 1)
+		Next
+
+		'Actualiza el temblor de la pantalla
+		If shake>0
+			Translate(Rnd(-1,1),Rnd(-1,1))
+			shake -= 1
+		Endif
+
+		'Dibuja las particulas
+		DrawParticles()
+		
+		If circle<64
+			SetAlpha(0.2)
+			SetColor(CR,CG,CB)
+			Circle(32-0.5,32-0.5,circle)
+		Endif
+			
+		SetAlpha(1.0)
+		SetColor(255,255,255)
+
+		Select state
+   			
+		Case STATE_MENU
+
+   			DrawImage(imgTitle,32,12)
+			Text("[TheMrCerebro]",32,58,0.5,0.5)
+			
+			SetAlpha(0.5+Cos(0.5 * Millisecs() Mod 360)*0.5)
+			Text("Press",32,20+7,0.5,0.5)
+			Text("-X-",32,20+7+7,0.5,0.5)
+			Text("to START",32,20+7+7+7,0.5,0.5)
+ 	
+		Case STATE_INGAME
+   				
+			For Local bll:= Eachin bllA
+				SetColor(bll.r,bll.g,bll.b)
+				Rect(bll.x-1,bll.y-1,2,2)
+			Next
+
+			SetColor(255,255,0)
+			Text("S",2,2,0.5,0.5)
+			Text("H    ",63,3,1.0,0.5)
+			Text("L",2,56,0.5,0)
+			
+			SetColor(255,255,255)
+			Local str$
+	        If score<10 Then str+="0"
+			Text(str+score,9,2,0.5,0.5)
+			str=""
+			If hiscore<10 Then str+="0"
+			Text(str+hiscore,63,2,1,0.5)
+			Text(lifes,6,60,0.5,0.5)
+			
+			DrawImage(imgSensor,55,55,after)
+			
+			DrawImage(imgPlayer,32,32,rotation,1.0,1.0,0.1*Millisecs() Mod 4)
+
+			DrawImage(imgLauncher,32,Move,270,1.0,1.0,0)'Arriba
+			DrawImage(imgLauncher,32,64-Move,90,1.0,1.0,0)'Abajo
+			DrawImage(imgLauncher,Move,32,0,1.0,1.0,0)'Izquierda
+			DrawImage(imgLauncher,64-Move,32,180,1.0,1.0,0)'Derecha
+
+		Case STATE_OVER
+
+			DrawScores(255,255,0,0,255,255)
+
+		End
+		
+		DrawAnimations()
+		
+		If fader>0
+			SetColor(255,255,255)
+			SetAlpha(fader)
+			Rect(0,0,64,64)
+		Endif
+		
+	End
+
+Private
+
+	'Listas
+	Field bllA:=New List<BULLET>
+	
+	Enumerate STATE_MENU,STATE_INGAME,STATE_OVER
+	Field state%,fader#,shake%,fullscreen?
+	
+	Field rotation%,Increment%
+	Field shot%,after%
+	Field level#,lifes%
+
+	Field circle#,CR%,CG%,CB%,Move#
+	
+	'Imagenes
+	Field imgPlayer:Image
+	Field imgLauncher:Image
+	Field imgTitle:Image
+	Field imgELight:Image
+	Field imgEPlasma:Image
+	Field imgSensor:Image
+	
+	'Sonidos
+	Field sndSelect:Sound
+	Field sndGood:Sound
+	Field sndBad:Sound
+	Field sndRotate:Sound
+	Field sndOver:Sound
+	
+End
